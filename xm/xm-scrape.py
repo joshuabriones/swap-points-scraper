@@ -31,7 +31,7 @@ MASTER_ORDER = [
     "SANDUSD", "SHIBUSD", "SKLUSD", "SNXUSD", "SOLUSD", "STORJUSD", "STXUSD", "SUSHIUSD", "UMAUSD",
     "UNIUSD", "XLMUSD", "XRPUSD", "XTZUSD", "ZECUSD", "ZRXUSD", "AUS200Cash", "CA60Cash", "ChinaHCash",
     "EU50Cash", "FRA40Cash", "GER40Cash", "GerMid50Cash", "GerTech30Cash", "HK50Cash", "IT40Cash",
-    "JP225Cash", "NETH25Cash", "SA40Cash", "SPAIN35Cash", "SWI20Cash", "UK100Cash", "US100Cash",
+    "JP225Cash", "NETH25Cash", "SA40Cash", "SpainCash", "SWI20Cash", "UK100Cash", "US100Cash",
     "US2000Cash", "US30Cash", "US500Cash", "GOLD", "SILVER", "XAUEUR", "XPDUSD", "XPTUSD", "BRENTCash",
     "NGASCash", "OILCash", "BTCJPY", "VAULTAUSD", "XAUCNH", "XAUJPY", "GAUCNH", "GAUUSD"
 ]
@@ -57,54 +57,50 @@ def save_to_google_sheets(data_list):
         rows_to_upload = [[d['Symbol'], d['Long'], d['Short']] for d in data_list]
         worksheet.append_rows(rows_to_upload)
 
-        print(f"Applying Noto Sans JP and Custom Color #333333...", flush=True)
-        fmt = CellFormat(
-            textFormat=TextFormat(fontFamily="Noto Sans JP", fontSize=9, foregroundColor=Color(0.2, 0.2, 0.2))
-        )
+        print(f"Applying Noto Sans JP and Color #333333...", flush=True)
+        fmt = CellFormat(textFormat=TextFormat(fontFamily="Noto Sans JP", fontSize=9, foregroundColor=Color(0.2, 0.2, 0.2)))
         format_cell_range(worksheet, f"A1:C{len(rows_to_upload) + 1}", fmt)
         set_frozen(worksheet, rows=1)
-        print(f"SUCCESS: Data stored and formatted in tab '{sheet_title}'!", flush=True)
+        print(f"SUCCESS: Data stored in '{sheet_title}'!", flush=True)
     except Exception as e:
         print(f"!!! Sheets Storage Error: {str(e)}", flush=True)
 
-def get_fresh_driver():
+def get_fresh_driver(strategy='normal'):
     options = Options()
     # options.add_argument("--headless")
-    options.add_argument("--disable-gpu") # Prevents occasional renderer timeouts
+    options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-background-networking") # Fix for renderer message hangs
-    
-    # EAGER strategy: stops waiting once core content is loaded
-    options.page_load_strategy = 'eager'
+    # Fix for 'timeout from renderer' errors
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.page_load_strategy = strategy # Flexible strategy based on URL behavior
     
     prefs = {"profile.managed_default_content_settings.images": 2}
     options.add_experimental_option("prefs", prefs)
     
     driver = webdriver.Chrome(options=options)
-    driver.set_page_load_timeout(35) # Increased slightly for slow renderer links
+    driver.set_page_load_timeout(45) # Higher timeout for heavy Forex/Energies pages
     return driver
 
 def handle_modal(driver):
     try:
-        accept_btn = WebDriverWait(driver, 8).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "button.js-acceptDefaultCookie"))
-        )
+        accept_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.js-acceptDefaultCookie")))
         accept_btn.click()
     except: pass
 
 def scrape_standard_page(url, name_attr):
-    driver = get_fresh_driver()
+    # Use 'normal' strategy for standard pages as they are more sensitive to script loading
+    driver = get_fresh_driver(strategy='normal')
     results = {}
     try:
         driver.get(url)
         handle_modal(driver)
-        wait = WebDriverWait(driver, 15)
+        wait = WebDriverWait(driver, 20)
         wait.until(EC.presence_of_element_located((By.ID, "DataTables_Table_0")))
         
         try:
             driver.find_element(By.NAME, "DataTables_Table_0_length").send_keys("100")
-            time.sleep(1.5)
+            time.sleep(2)
         except: pass
 
         rows = driver.find_elements(By.CSS_SELECTOR, "#DataTables_Table_0 tbody tr")
@@ -119,11 +115,12 @@ def scrape_standard_page(url, name_attr):
     return results
 
 def scrape_crypto_page():
-    driver = get_fresh_driver()
+    # Use 'eager' strategy for Crypto page as it is extremely dynamic
+    driver = get_fresh_driver(strategy='eager')
     results = {}
     try:
         driver.get("https://xem.fxsignup.com/trade/crypto-cfds.html")
-        wait = WebDriverWait(driver, 20)
+        wait = WebDriverWait(driver, 25)
         try:
             btn = driver.find_element(By.CSS_SELECTOR, "div.toggleBtnTable")
             driver.execute_script("arguments[0].click();", btn)
@@ -158,8 +155,13 @@ def run_main():
         try:
             master_map.update(scrape_standard_page(url, attr))
         except Exception as e:
-            print(f"!!! Skipping {cat} URL due to error: {e}")
-    
+            print(f"!!! Retry triggered for {cat} due to timeout...")
+            try:
+                # One single retry attempt with Normal strategy
+                master_map.update(scrape_standard_page(url, attr))
+            except:
+                print(f"!!! Error in {cat}: {e}")
+
     print("Scraping Crypto...")
     try:
         master_map.update(scrape_crypto_page())
