@@ -57,8 +57,8 @@ def save_to_google_sheets(data_list):
         rows_to_upload = [[d['Symbol'], d['Long'], d['Short']] for d in data_list]
         worksheet.append_rows(rows_to_upload)
 
-        print(f"Applying Noto Sans JP and Color #333333...", flush=True)
-        fmt = CellFormat(textFormat=TextFormat(fontFamily="Noto Sans JP", fontSize=9, foregroundColor=Color(0.2, 0.2, 0.2)))
+        print(f"Applying Roboto and Color #333333...", flush=True)
+        fmt = CellFormat(textFormat=TextFormat(fontFamily="Roboto", fontSize=10, foregroundColor=Color(0.2, 0.2, 0.2)))
         format_cell_range(worksheet, f"A1:C{len(rows_to_upload) + 1}", fmt)
         set_frozen(worksheet, rows=1)
         print(f"SUCCESS: Data stored in '{sheet_title}'!", flush=True)
